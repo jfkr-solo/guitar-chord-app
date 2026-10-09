@@ -45,7 +45,7 @@ export default function ChordPicker({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-3 flex items-center gap-2 bg-gray-900 px-4 pb-2 pt-4">
-          <h2 className="flex-1 text-base font-bold text-gray-200">{title}</h2>
+          <h2 className="text-base font-bold text-gray-200">{title}</h2>
           <button
             type="button"
             disabled={!trimmed}
@@ -54,7 +54,7 @@ export default function ChordPicker({
           >
             決定
           </button>
-          <button type="button" onClick={onClose} className="h-10 w-10 rounded-full text-xl text-gray-400 active:bg-white/10" aria-label="閉じる">
+          <button type="button" onClick={onClose} className="ml-auto h-10 w-10 rounded-full text-xl text-gray-400 active:bg-white/10" aria-label="閉じる">
             ✕
           </button>
         </div>
