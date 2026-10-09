@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 弾き語りノート
 
-## Getting Started
+ギター弾き語り用の Web アプリです。歌詞の文字ごとにコードとストロークパターンを置き、演奏画面で曲の長さに合わせて自動スクロールします。
 
-First, run the development server:
+## 使い方
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev   # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 画面
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `/` 曲一覧（新規作成・編集・削除）
+- `/edit/[id]` 編集（タイトル・歌詞・曲の長さ・カポ／歌詞の文字をタップしてコードとストロークを配置）
+- `/play/[id]` 演奏（自動スクロール、コードをタップで押さえ方を表示）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 構成
 
-## Learn More
+```
+src/app/page.tsx              曲一覧
+src/app/edit/[id]/page.tsx    編集画面
+src/app/play/[id]/page.tsx    演奏画面
+src/components/LyricsSheet    歌詞＋コード＋ストロークの表示（文字の真下にコードを揃える）
+src/components/ChordPicker    コード・ストローク選択のボトムシート
+src/components/ChordDiagram   コードダイアグラム（SVG）
+src/components/DiagramPopup   演奏中の押さえ方ポップアップ
+src/lib/chords.ts             押さえ方データ（定番オープンコード＋Eフォーム/Aフォームから生成）
+src/lib/storage.ts            localStorage への保存
+src/lib/useAutoScroll.ts      自動スクロール
+```
 
-To learn more about Next.js, take a look at the following resources:
+## メモ
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- データはブラウザの localStorage に保存されます（端末・ブラウザごと）。
+- スクロール位置 = 経過時間 ÷ 曲の長さ ×（全体の高さ − 画面の高さ）。曲の終わりで最後の行が画面下端に届きます。
+- 再生中・停止中に手でスクロールすると、その位置から再生が続きます。
