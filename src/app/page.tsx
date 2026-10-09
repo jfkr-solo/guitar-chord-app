@@ -27,7 +27,7 @@ export default function SongListPage() {
   };
 
   return (
-    <main className="mx-auto max-w-lg px-4 pb-28 pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <main className="mx-auto max-w-lg px-4 pb-44 pt-[max(1.25rem,env(safe-area-inset-top))]">
       <h1 className="mb-4 text-2xl font-bold">曲一覧</h1>
 
       {songs !== null && songs.length === 0 && (
@@ -72,6 +72,12 @@ export default function SongListPage() {
         >
           ＋ 新しい曲
         </button>
+        <Link
+          href="/detect"
+          className="mx-auto mt-2 flex h-12 w-full max-w-lg items-center justify-center rounded-2xl bg-gray-800 text-base font-bold text-amber-400 ring-1 ring-amber-500/40 active:bg-gray-700"
+        >
+          🎤 コード判定
+        </Link>
       </div>
     </main>
   );
