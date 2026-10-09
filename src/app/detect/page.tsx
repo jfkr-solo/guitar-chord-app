@@ -9,7 +9,7 @@ import {
   analyzeSpectrum,
   chordTones,
   rankChords,
-  scoreChord,
+  rateChord,
   type Analysis,
   type ChordMatch,
 } from "@/lib/chordDetect";
@@ -23,11 +23,13 @@ const NOISE_RATIO = 3;
 /** クロマの平滑化（大きいほど反応が速い） */
 const SMOOTHING = 0.45;
 /** 構成音のクロマがこれ未満なら「鳴っていない」 */
-const MISSING_LEVEL = 0.08;
+const MISSING_LEVEL = 0.15;
 /** 構成音以外のクロマがこれ以上なら「余計な音」 */
 const EXTRA_LEVEL = 0.55;
-/** 1位との差がこの範囲ならお手本のコードとして合格 */
-const PASS_MARGIN = 0.03;
+/** この点数以上なら「正しく鳴っている」 */
+const GOOD_SCORE = 80;
+/** この点数以上なら「おしい」 */
+const CLOSE_SCORE = 50;
 
 type Status = "idle" | "starting" | "listening" | "error";
 
@@ -136,20 +138,15 @@ export default function DetectPage() {
   const detected = result?.top[0] ?? null;
   const targetInfo = target ? chordTones(target) : null;
   const check = (() => {
-    if (!result || !targetInfo || !detected) return null;
+    if (!result || !targetInfo) return null;
     const { chroma } = result.analysis;
     const missing = targetInfo.tones.filter((t) => chroma[t] < MISSING_LEVEL);
     const extra = chroma
       .map((v, i) => (v >= EXTRA_LEVEL && !targetInfo.tones.includes(i) ? i : -1))
       .filter((i) => i >= 0);
-    const targetScore = scoreChord(result.analysis, targetInfo.root, targetInfo.quality);
-    // Am7 と C6 のように構成音が同じコードは、どちらが出ても正解にする
-    const detectedTones = chordTones(detected.name)?.tones ?? [];
-    const sameTones =
-      detectedTones.length === targetInfo.tones.length && detectedTones.every((t) => targetInfo.tones.includes(t));
-    const isTop = sameTones || (detected.root === targetInfo.root && detected.quality === targetInfo.quality);
-    const ok = missing.length === 0 && (isTop || detected.score - targetScore <= PASS_MARGIN);
-    return { ok, missing, extra };
+    const score = rateChord(result.analysis, targetInfo);
+    const grade = score >= GOOD_SCORE ? "good" : score >= CLOSE_SCORE ? "close" : "bad";
+    return { score, grade, missing, extra };
   })();
 
   return (
@@ -196,13 +193,34 @@ export default function DetectPage() {
       {target && (
         <section
           className={`mb-4 rounded-2xl p-4 text-center ring-2 ${
-            check === null ? "bg-gray-800/40 ring-gray-700" : check.ok ? "bg-emerald-900/40 ring-emerald-500" : "bg-rose-900/30 ring-rose-500"
+            check === null
+              ? "bg-gray-800/40 ring-gray-700"
+              : check.grade === "good"
+                ? "bg-emerald-900/40 ring-emerald-500"
+                : check.grade === "close"
+                  ? "bg-amber-900/30 ring-amber-500"
+                  : "bg-rose-900/30 ring-rose-500"
           }`}
         >
-          <p className="text-lg font-bold">
-            {check === null ? `${target} を鳴らしてください` : check.ok ? `◎ ${target} が鳴っています` : `△ ${target} になっていません`}
-          </p>
-          {check && !check.ok && (
+          {check === null ? (
+            <p className="text-lg font-bold">{target} を鳴らしてください</p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-300">{target} の点数</p>
+              <p
+                className={`text-6xl font-bold tabular-nums ${
+                  check.grade === "good" ? "text-emerald-400" : check.grade === "close" ? "text-amber-400" : "text-rose-400"
+                }`}
+              >
+                {check.score}
+                <span className="ml-1 text-2xl">点</span>
+              </p>
+              <p className="mt-1 text-lg font-bold">
+                {check.grade === "good" ? "◎ 正しく鳴っています" : check.grade === "close" ? "○ おしい！" : `△ ${target} になっていません`}
+              </p>
+            </>
+          )}
+          {check && check.grade !== "good" && (
             <p className="mt-1 text-sm text-gray-300">
               {check.missing.length > 0 && `鳴っていない音: ${check.missing.map((i) => NOTE_NAMES[i]).join(", ")}`}
               {check.missing.length > 0 && check.extra.length > 0 && " ／ "}
@@ -239,7 +257,7 @@ export default function DetectPage() {
 
       {/* お手本コードの選択 */}
       <section className="mb-6">
-        <p className="mb-2 text-sm text-gray-400">お手本のコード（選ぶと正しく弾けているかチェックします）</p>
+        <p className="mb-2 text-sm text-gray-400">お手本のコード（選ぶと正しく弾けているかを0〜100点で採点します）</p>
         <div className="mb-2 grid grid-cols-6 gap-1.5">
           {ROOTS.map((r) => (
             <button

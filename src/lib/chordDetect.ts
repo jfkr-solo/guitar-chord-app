@@ -168,3 +168,21 @@ export function chordTones(name: string): { root: number; quality: string; tones
   if (root === undefined || !intervals) return null;
   return { root, quality: parsed.quality, tones: intervals.map((iv) => (root + iv) % 12) };
 }
+
+/**
+ * お手本のコードがどれだけ正しく鳴っているかを 0〜100 点で返す。
+ * - 構成音がそろっているか（40点）
+ * - 構成音以外の音が混ざっていないか（35点）
+ * - 一番近いコードとしてお手本が選ばれているか（25点）
+ */
+export function rateChord(analysis: Analysis, target: { root: number; quality: string; tones: number[] }): number {
+  const { chroma } = analysis;
+  const clamp = (x: number) => Math.min(1, Math.max(0, x));
+  const total = chroma.reduce((s, v) => s + v, 0);
+  if (total === 0) return 0;
+  const coverage = target.tones.reduce((s, t) => s + Math.min(1, chroma[t] / 0.3), 0) / target.tones.length;
+  const purity = clamp((target.tones.reduce((s, t) => s + chroma[t], 0) / total - 0.3) / 0.45);
+  const best = rankChords(analysis, 1)[0].score;
+  const closeness = clamp(1 - (best - scoreChord(analysis, target.root, target.quality)) / 0.3);
+  return Math.round(100 * (0.4 * coverage + 0.35 * purity + 0.25 * closeness));
+}
