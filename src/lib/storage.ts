@@ -18,8 +18,19 @@ function writeAll(songs: Song[]) {
   window.localStorage.setItem(KEY, JSON.stringify(songs));
 }
 
+/** 並び順の値。未設定（並べ替え前の曲）は更新日時が新しいほど上 */
+function sortKey(song: Song): number {
+  return song.order ?? -song.updatedAt;
+}
+
 export function listSongs(): Song[] {
-  return readAll().sort((a, b) => b.updatedAt - a.updatedAt);
+  return readAll().sort((a, b) => sortKey(a) - sortKey(b));
+}
+
+/** 曲一覧の並び順を保存する（ids は上から順） */
+export function reorderSongs(ids: string[]) {
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  writeAll(readAll().map((s) => (rank.has(s.id) ? { ...s, order: rank.get(s.id) } : s)));
 }
 
 export function getSong(id: string): Song | undefined {
@@ -52,6 +63,8 @@ export function createSong(): Song {
     capo: 0,
     chords: [],
     updatedAt: Date.now(),
+    // 新しい曲は一覧の一番上に出す
+    order: -Date.now(),
   };
 }
 

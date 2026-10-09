@@ -18,4 +18,6 @@ export type Song = {
   capo: number;
   chords: PlacedChord[];
   updatedAt: number;
+  /** 曲一覧での並び順（小さいほど上）。未設定の曲は更新日時の新しい順で上に並ぶ */
+  order?: number;
 };
