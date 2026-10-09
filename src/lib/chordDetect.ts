@@ -29,10 +29,6 @@ export const DETECT_QUALITIES: Record<string, number[]> = {
   "m7-5": [0, 3, 6, 10],
 };
 
-/** 構成音が多いコードほど何にでも似てしまうので、少しだけ不利にする */
-const COMPLEXITY_PENALTY = 0.01;
-/** 一番低い音（ベース）がルートと一致したときのボーナス */
-const BASS_BONUS = 0.04;
 
 const MIN_FREQ = 70; // 6弦開放 E2 ≒ 82Hz より少し下
 const MAX_FREQ = 1600;
@@ -50,6 +46,31 @@ const freqToPitchClass = (freq: number) => {
   return ((Math.round(midi) % 12) + 12) % 12;
 };
 
+/** 判定の調整値（ギター音源をスマホのマイク相当に加工した音で合わせた値） */
+export const TUNING = {
+  /** 最大ピークから何 dB 下までを音として数えるか */
+  rangeDb: 40,
+  /** 振幅の圧縮（1 = そのまま。小さくするほど弱い音も拾う） */
+  ampPower: 0.3,
+  /** 奇数倍音（3, 5, 6, 7 倍）とみなす許容誤差（セント） */
+  harmonicCents: 25,
+  /** 倍音とみなした山の重みに掛ける係数 */
+  harmonicKeep: 0.25,
+  /** 低い山の何倍までの大きさなら、その倍音とみなすか */
+  harmonicRatio: 6,
+  /** この周波数より上は 1/f で重みを下げる */
+  rolloffHz: 400,
+  /** 構成音が多いコードほど何にでも似てしまうので、少しだけ不利にする */
+  complexityPenalty: 0.01,
+  /** 一番低い音（ベース）がルートと一致したときのボーナス */
+  bassBonus: 0.04,
+};
+
+type Peak = { freq: number; amp: number; pc: number };
+
+/** 3倍・5倍・6倍・7倍は別の音名に聞こえてしまう倍音 */
+const MISLEADING_HARMONICS = [3, 5, 6, 7];
+
 /**
  * getFloatFrequencyData の結果（dB）からクロマを作る。
  * 音が小さすぎるときは null を返す。
@@ -57,34 +78,43 @@ const freqToPitchClass = (freq: number) => {
 export function analyzeSpectrum(db: Float32Array, sampleRate: number, fftSize: number): Analysis | null {
   const binHz = sampleRate / fftSize;
   const lo = Math.max(2, Math.floor(MIN_FREQ / binHz));
-  const hi = Math.min(db.length - 2, Math.ceil(MAX_FREQ / binHz));
+  const hi = Math.min(db.length - 3, Math.ceil(MAX_FREQ / binHz));
 
   let maxDb = -Infinity;
   for (let i = lo; i <= hi; i++) if (db[i] > maxDb) maxDb = db[i];
-  if (maxDb < -75) return null;
+  if (maxDb < -100) return null;
 
-  // 最大ピークから 40dB 以内の局所的な山だけを音として数える
-  const threshold = maxDb - 40;
-  const chroma = new Array(12).fill(0);
-  let bass: number | null = null;
+  // 最大ピークから一定の範囲内にある局所的な山を拾う
+  const threshold = maxDb - TUNING.rangeDb;
+  const peaks: Peak[] = [];
   for (let i = lo; i <= hi; i++) {
     const v = db[i];
     if (v < threshold || v < db[i - 1] || v < db[i + 1] || v < db[i - 2] || v < db[i + 2]) continue;
     // 放物線補間でピーク周波数を少し正確にする
     const a = db[i - 1];
-    const b = v;
     const c = db[i + 1];
-    const denom = a - 2 * b + c;
+    const denom = a - 2 * v + c;
     const offset = denom === 0 ? 0 : (0.5 * (a - c)) / denom;
     const freq = (i + offset) * binHz;
-    const amp = Math.pow(10, (v - maxDb) / 20); // 0〜1
-    // 高い倍音ほど重みを下げる
-    const weight = amp * (freq < 400 ? 1 : 400 / freq);
-    const pc = freqToPitchClass(freq);
-    chroma[pc] += weight;
-    if (bass === null && amp > 0.2 && freq < 330) {
-      bass = pc;
-    }
+    peaks.push({ freq, amp: Math.pow(10, (v - maxDb) / 20), pc: freqToPitchClass(freq) });
+  }
+  if (peaks.length === 0) return null;
+
+  const chroma = new Array(12).fill(0);
+  let bass: number | null = null;
+  for (const p of peaks) {
+    // 低い音の奇数倍音（例: A の 3 倍音は E に聞こえる）は数えない
+    const isHarmonic = peaks.some(
+      (q) =>
+        q.freq < p.freq &&
+        q.amp * TUNING.harmonicRatio >= p.amp &&
+        MISLEADING_HARMONICS.some((h) => Math.abs(1200 * Math.log2(p.freq / (q.freq * h))) < TUNING.harmonicCents),
+    );
+    let weight = Math.pow(p.amp, TUNING.ampPower);
+    if (p.freq > TUNING.rolloffHz) weight *= TUNING.rolloffHz / p.freq;
+    if (isHarmonic) weight *= TUNING.harmonicKeep;
+    chroma[p.pc] += weight;
+    if (bass === null && !isHarmonic && p.amp > 0.2 && p.freq < 330) bass = p.pc;
   }
 
   const peak = Math.max(...chroma);
@@ -107,8 +137,8 @@ export function scoreChord(analysis: Analysis, root: number, quality: string): n
   const intervals = DETECT_QUALITIES[quality];
   if (!intervals) return 0;
   let score = templateScore(analysis.chroma, root, intervals);
-  score -= COMPLEXITY_PENALTY * (intervals.length - 3);
-  if (analysis.bass === root) score += BASS_BONUS;
+  score -= TUNING.complexityPenalty * (intervals.length - 3);
+  if (analysis.bass === root) score += TUNING.bassBonus;
   return score;
 }
 

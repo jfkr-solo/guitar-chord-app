@@ -17,7 +17,9 @@ import {
 const FFT_SIZE = 16384;
 const INTERVAL_MS = 120;
 /** これより小さい音は無音とみなす（RMS） */
-const SILENCE_RMS = 0.008;
+const MIN_RMS = 0.002;
+/** 周りの雑音の何倍の音量でギターが鳴っているとみなすか */
+const NOISE_RATIO = 3;
 /** クロマの平滑化（大きいほど反応が速い） */
 const SMOOTHING = 0.45;
 /** 構成音のクロマがこれ未満なら「鳴っていない」 */
@@ -55,12 +57,16 @@ export default function DetectPage() {
       return;
     }
     setStatus("starting");
+    // iPhone ではタップ直後に作らないと音が流れてこないため、マイク許可より先に作る
+    const Ctx: typeof AudioContext =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    void ctx.resume();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
-      const ctx = new AudioContext();
-      await ctx.resume();
+      if (ctx.state !== "running") await ctx.resume();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = FFT_SIZE;
@@ -71,17 +77,22 @@ export default function DetectPage() {
       const wave = new Float32Array(analyser.fftSize);
       let smoothed: number[] | null = null;
       let bass: number | null = null;
+      let noiseFloor = MIN_RMS;
 
       const timer = window.setInterval(() => {
         analyser.getFloatTimeDomainData(wave);
         let sum = 0;
         for (let i = 0; i < wave.length; i++) sum += wave[i] * wave[i];
         const rms = Math.sqrt(sum / wave.length);
-        setLevel(Math.min(1, rms * 12));
+        setLevel(Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-9) + 60) / 50)));
 
-        if (rms < SILENCE_RMS) {
+        // 雑音の大きさを少しずつ追いかける（静かなときに下がり、ゆっくり上がる）
+        noiseFloor = rms < noiseFloor ? rms : noiseFloor * 1.005;
+        noiseFloor = Math.max(noiseFloor, MIN_RMS / NOISE_RATIO);
+        if (rms < Math.max(MIN_RMS, noiseFloor * NOISE_RATIO)) {
+          // 音が止んでも直前の判定結果は残し、次に鳴らした音は新しく判定し直す
           smoothed = null;
-          setResult(null);
+          bass = null;
           return;
         }
         analyser.getFloatFrequencyData(freq);
@@ -104,6 +115,7 @@ export default function DetectPage() {
       };
       setStatus("listening");
     } catch (e) {
+      void ctx.close();
       setStatus("error");
       const name = e instanceof DOMException ? e.name : "";
       setError(
@@ -131,7 +143,11 @@ export default function DetectPage() {
       .map((v, i) => (v >= EXTRA_LEVEL && !targetInfo.tones.includes(i) ? i : -1))
       .filter((i) => i >= 0);
     const targetScore = scoreChord(result.analysis, targetInfo.root, targetInfo.quality);
-    const isTop = detected.root === targetInfo.root && detected.quality === targetInfo.quality;
+    // Am7 と C6 のように構成音が同じコードは、どちらが出ても正解にする
+    const detectedTones = chordTones(detected.name)?.tones ?? [];
+    const sameTones =
+      detectedTones.length === targetInfo.tones.length && detectedTones.every((t) => targetInfo.tones.includes(t));
+    const isTop = sameTones || (detected.root === targetInfo.root && detected.quality === targetInfo.quality);
     const ok = missing.length === 0 && (isTop || detected.score - targetScore <= PASS_MARGIN);
     return { ok, missing, extra };
   })();
