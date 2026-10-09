@@ -44,8 +44,16 @@ export default function ChordPicker({
         className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-gray-900 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-gray-200">{title}</h2>
+        <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-3 flex items-center gap-2 bg-gray-900 px-4 pb-2 pt-4">
+          <h2 className="flex-1 text-base font-bold text-gray-200">{title}</h2>
+          <button
+            type="button"
+            disabled={!trimmed}
+            onClick={() => onSave(trimmed, stroke)}
+            className="h-10 rounded-xl bg-amber-500 px-6 font-bold text-gray-900 active:bg-amber-400 disabled:opacity-40"
+          >
+            決定
+          </button>
           <button type="button" onClick={onClose} className="h-10 w-10 rounded-full text-xl text-gray-400 active:bg-white/10" aria-label="閉じる">
             ✕
           </button>
@@ -156,21 +164,11 @@ export default function ChordPicker({
           ))}
         </div>
 
-        <div className="mt-5 flex gap-2">
-          {onDelete && (
-            <button type="button" onClick={onDelete} className="h-12 rounded-xl bg-red-500/15 px-4 font-bold text-red-400 active:bg-red-500/30">
-              削除
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={!trimmed}
-            onClick={() => onSave(trimmed, stroke)}
-            className="h-12 flex-1 rounded-xl bg-amber-500 font-bold text-gray-900 active:bg-amber-400 disabled:opacity-40"
-          >
-            決定
+        {onDelete && (
+          <button type="button" onClick={onDelete} className="mt-5 h-12 w-full rounded-xl bg-red-500/15 font-bold text-red-400 active:bg-red-500/30">
+            削除
           </button>
-        </div>
+        )}
       </div>
     </div>
   );
