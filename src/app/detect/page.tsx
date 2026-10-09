@@ -17,7 +17,7 @@ import {
 const FFT_SIZE = 16384;
 const INTERVAL_MS = 120;
 /** これより小さい音は無音とみなす（RMS） */
-const MIN_RMS = 0.002;
+const MIN_RMS = 0.0005;
 /** 周りの雑音の何倍の音量でギターが鳴っているとみなすか */
 const NOISE_RATIO = 3;
 /** 弾いた直後はアタックの雑音が多いので、この回数ぶん判定を見送る */
