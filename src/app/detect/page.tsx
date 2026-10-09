@@ -9,7 +9,7 @@ import {
   analyzeSpectrum,
   chordTones,
   rankChords,
-  scoreChord,
+  rateChord,
   type Analysis,
   type ChordMatch,
 } from "@/lib/chordDetect";
@@ -17,15 +17,21 @@ import {
 const FFT_SIZE = 16384;
 const INTERVAL_MS = 120;
 /** これより小さい音は無音とみなす（RMS） */
-const SILENCE_RMS = 0.008;
+const MIN_RMS = 0.0005;
+/** 周りの雑音の何倍の音量でギターが鳴っているとみなすか */
+const NOISE_RATIO = 3;
+/** 弾いた直後はアタックの雑音が多いので、この回数ぶん判定を見送る */
+const SKIP_AFTER_ONSET = 2;
 /** クロマの平滑化（大きいほど反応が速い） */
 const SMOOTHING = 0.45;
 /** 構成音のクロマがこれ未満なら「鳴っていない」 */
-const MISSING_LEVEL = 0.08;
+const MISSING_LEVEL = 0.15;
 /** 構成音以外のクロマがこれ以上なら「余計な音」 */
 const EXTRA_LEVEL = 0.55;
-/** 1位との差がこの範囲ならお手本のコードとして合格 */
-const PASS_MARGIN = 0.03;
+/** この点数以上なら「正しく鳴っている」 */
+const GOOD_SCORE = 80;
+/** この点数以上なら「おしい」 */
+const CLOSE_SCORE = 50;
 
 type Status = "idle" | "starting" | "listening" | "error";
 
@@ -55,12 +61,16 @@ export default function DetectPage() {
       return;
     }
     setStatus("starting");
+    // iPhone ではタップ直後に作らないと音が流れてこないため、マイク許可より先に作る
+    const Ctx: typeof AudioContext =
+      window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    void ctx.resume();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
-      const ctx = new AudioContext();
-      await ctx.resume();
+      if (ctx.state !== "running") await ctx.resume();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = FFT_SIZE;
@@ -71,19 +81,27 @@ export default function DetectPage() {
       const wave = new Float32Array(analyser.fftSize);
       let smoothed: number[] | null = null;
       let bass: number | null = null;
+      let noiseFloor = MIN_RMS;
+      let framesSinceOnset = 0;
 
       const timer = window.setInterval(() => {
         analyser.getFloatTimeDomainData(wave);
         let sum = 0;
         for (let i = 0; i < wave.length; i++) sum += wave[i] * wave[i];
         const rms = Math.sqrt(sum / wave.length);
-        setLevel(Math.min(1, rms * 12));
+        setLevel(Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-9) + 60) / 50)));
 
-        if (rms < SILENCE_RMS) {
+        // 雑音の大きさを少しずつ追いかける（静かなときに下がり、ゆっくり上がる）
+        noiseFloor = rms < noiseFloor ? rms : noiseFloor * 1.005;
+        noiseFloor = Math.max(noiseFloor, MIN_RMS / NOISE_RATIO);
+        if (rms < Math.max(MIN_RMS, noiseFloor * NOISE_RATIO)) {
+          // 音が止んでも直前の判定結果は残し、次に鳴らした音は新しく判定し直す
           smoothed = null;
-          setResult(null);
+          bass = null;
+          framesSinceOnset = 0;
           return;
         }
+        if (framesSinceOnset++ < SKIP_AFTER_ONSET) return;
         analyser.getFloatFrequencyData(freq);
         const a = analyzeSpectrum(freq, ctx.sampleRate, analyser.fftSize);
         if (!a) return;
@@ -104,6 +122,7 @@ export default function DetectPage() {
       };
       setStatus("listening");
     } catch (e) {
+      void ctx.close();
       setStatus("error");
       const name = e instanceof DOMException ? e.name : "";
       setError(
@@ -124,16 +143,15 @@ export default function DetectPage() {
   const detected = result?.top[0] ?? null;
   const targetInfo = target ? chordTones(target) : null;
   const check = (() => {
-    if (!result || !targetInfo || !detected) return null;
+    if (!result || !targetInfo) return null;
     const { chroma } = result.analysis;
     const missing = targetInfo.tones.filter((t) => chroma[t] < MISSING_LEVEL);
     const extra = chroma
       .map((v, i) => (v >= EXTRA_LEVEL && !targetInfo.tones.includes(i) ? i : -1))
       .filter((i) => i >= 0);
-    const targetScore = scoreChord(result.analysis, targetInfo.root, targetInfo.quality);
-    const isTop = detected.root === targetInfo.root && detected.quality === targetInfo.quality;
-    const ok = missing.length === 0 && (isTop || detected.score - targetScore <= PASS_MARGIN);
-    return { ok, missing, extra };
+    const score = rateChord(result.analysis, targetInfo);
+    const grade = score >= GOOD_SCORE ? "good" : score >= CLOSE_SCORE ? "close" : "bad";
+    return { score, grade, missing, extra };
   })();
 
   return (
@@ -180,13 +198,34 @@ export default function DetectPage() {
       {target && (
         <section
           className={`mb-4 rounded-2xl p-4 text-center ring-2 ${
-            check === null ? "bg-gray-800/40 ring-gray-700" : check.ok ? "bg-emerald-900/40 ring-emerald-500" : "bg-rose-900/30 ring-rose-500"
+            check === null
+              ? "bg-gray-800/40 ring-gray-700"
+              : check.grade === "good"
+                ? "bg-emerald-900/40 ring-emerald-500"
+                : check.grade === "close"
+                  ? "bg-amber-900/30 ring-amber-500"
+                  : "bg-rose-900/30 ring-rose-500"
           }`}
         >
-          <p className="text-lg font-bold">
-            {check === null ? `${target} を鳴らしてください` : check.ok ? `◎ ${target} が鳴っています` : `△ ${target} になっていません`}
-          </p>
-          {check && !check.ok && (
+          {check === null ? (
+            <p className="text-lg font-bold">{target} を鳴らしてください</p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-300">{target} の点数</p>
+              <p
+                className={`text-6xl font-bold tabular-nums ${
+                  check.grade === "good" ? "text-emerald-400" : check.grade === "close" ? "text-amber-400" : "text-rose-400"
+                }`}
+              >
+                {check.score}
+                <span className="ml-1 text-2xl">点</span>
+              </p>
+              <p className="mt-1 text-lg font-bold">
+                {check.grade === "good" ? "◎ 正しく鳴っています" : check.grade === "close" ? "○ おしい！" : `△ ${target} になっていません`}
+              </p>
+            </>
+          )}
+          {check && check.grade !== "good" && (
             <p className="mt-1 text-sm text-gray-300">
               {check.missing.length > 0 && `鳴っていない音: ${check.missing.map((i) => NOTE_NAMES[i]).join(", ")}`}
               {check.missing.length > 0 && check.extra.length > 0 && " ／ "}
@@ -223,7 +262,7 @@ export default function DetectPage() {
 
       {/* お手本コードの選択 */}
       <section className="mb-6">
-        <p className="mb-2 text-sm text-gray-400">お手本のコード（選ぶと正しく弾けているかチェックします）</p>
+        <p className="mb-2 text-sm text-gray-400">お手本のコード（選ぶと正しく弾けているかを0〜100点で採点します）</p>
         <div className="mb-2 grid grid-cols-6 gap-1.5">
           {ROOTS.map((r) => (
             <button
