@@ -20,6 +20,8 @@ const INTERVAL_MS = 120;
 const MIN_RMS = 0.002;
 /** 周りの雑音の何倍の音量でギターが鳴っているとみなすか */
 const NOISE_RATIO = 3;
+/** 弾いた直後はアタックの雑音が多いので、この回数ぶん判定を見送る */
+const SKIP_AFTER_ONSET = 2;
 /** クロマの平滑化（大きいほど反応が速い） */
 const SMOOTHING = 0.45;
 /** 構成音のクロマがこれ未満なら「鳴っていない」 */
@@ -80,6 +82,7 @@ export default function DetectPage() {
       let smoothed: number[] | null = null;
       let bass: number | null = null;
       let noiseFloor = MIN_RMS;
+      let framesSinceOnset = 0;
 
       const timer = window.setInterval(() => {
         analyser.getFloatTimeDomainData(wave);
@@ -95,8 +98,10 @@ export default function DetectPage() {
           // 音が止んでも直前の判定結果は残し、次に鳴らした音は新しく判定し直す
           smoothed = null;
           bass = null;
+          framesSinceOnset = 0;
           return;
         }
+        if (framesSinceOnset++ < SKIP_AFTER_ONSET) return;
         analyser.getFloatFrequencyData(freq);
         const a = analyzeSpectrum(freq, ctx.sampleRate, analyser.fftSize);
         if (!a) return;
