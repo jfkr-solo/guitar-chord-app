@@ -5,7 +5,7 @@ import { QUALITIES, ROOTS, parseChord } from "@/lib/chords";
 import ChordDiagram from "./ChordDiagram";
 
 const STROKE_PRESETS = ["↓↓↑↑↓↑", "↓↑↓↑↓↑↓↑", "↓・↓↑・↑↓↑", "↓↓↓↓", "↓・↓・"];
-const STROKE_KEYS = ["↓", "↑", "・", "×"];
+const STROKE_KEYS = ["↓", "↑", "・", "×", "～"];
 
 type Props = {
   title: string;
@@ -138,7 +138,7 @@ export default function ChordPicker({
             クリア
           </button>
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
+        <div className="mt-2 grid grid-cols-5 gap-1.5">
           {STROKE_KEYS.map((k) => (
             <button
               key={k}
