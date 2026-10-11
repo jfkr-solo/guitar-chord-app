@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { createSong, deleteSong, formatDuration, listSongs, reorderSongs, saveSong } from "@/lib/storage";
+import { createSong, deleteSong, exportSongs, formatDuration, importSongs, listSongs, reorderSongs, saveSong } from "@/lib/storage";
 import type { Song } from "@/lib/types";
 
 /** 長押しでドラッグ開始するまでの時間（ms） */
@@ -33,6 +33,7 @@ export default function SongListPage() {
     dragging: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setSongs(listSongs());
@@ -140,9 +141,67 @@ export default function SongListPage() {
     setSongs(listSongs());
   };
 
+  /** 全曲をファイルにして共有（iPhone/iPad は AirDrop などで送れる） */
+  const handleExport = async () => {
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const name = `guitar-songs-${stamp}.json`;
+    const blob = new Blob([exportSongs()], { type: "application/json" });
+    const file = new File([blob], name, { type: "application/json" });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "ギターコードの曲データ" });
+        return;
+      } catch (e) {
+        // キャンセルされたときは何もしない
+        if ((e as Error).name === "AbortError") return;
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const result = importSongs(await file.text());
+    if (!result) {
+      window.alert("曲データとして読み込めませんでした。「共有」で書き出したファイルを選んでください。");
+      return;
+    }
+    setSongs(listSongs());
+    window.alert(
+      `読み込みました\n新しい曲: ${result.added}曲\n更新した曲: ${result.updated}曲` +
+        (result.skipped ? `\n変更なし: ${result.skipped}曲` : ""),
+    );
+  };
+
   return (
     <main className="mx-auto max-w-lg px-4 pb-44 pt-[max(1.25rem,env(safe-area-inset-top))]">
-      <h1 className="mb-4 text-2xl font-bold">曲一覧</h1>
+      <div className="mb-4 flex items-center gap-2">
+        <h1 className="flex-1 text-2xl font-bold">曲一覧</h1>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={!songs?.length}
+          className="h-10 rounded-lg bg-gray-800 px-3 text-sm text-amber-400 active:bg-gray-700 disabled:opacity-40"
+        >
+          共有
+        </button>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="h-10 rounded-lg bg-gray-800 px-3 text-sm text-amber-400 active:bg-gray-700"
+        >
+          読み込み
+        </button>
+        <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleImport} className="hidden" />
+      </div>
 
       {songs !== null && songs.length === 0 && (
         <p className="mt-16 text-center text-gray-400">
