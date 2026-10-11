@@ -7,6 +7,7 @@ import ChordPicker from "@/components/ChordPicker";
 import LyricsSheet from "@/components/LyricsSheet";
 import { formatDuration, getSong, parseDuration, pruneChords, saveSong } from "@/lib/storage";
 import type { Song } from "@/lib/types";
+import { openYouTube, parseYouTube } from "@/lib/youtube";
 
 type Tab = "info" | "chords";
 
@@ -61,6 +62,8 @@ export default function EditPage() {
   if (!song) return null;
 
   const update = (patch: Partial<Song>) => setSong((s) => (s ? { ...s, ...patch } : s));
+  const youtubeText = song.youtubeUrl ?? "";
+  const youtubeValid = youtubeText.trim() === "" || parseYouTube(youtubeText) !== null;
   const durationValid = durationText.trim() === "" || parseDuration(durationText) !== null;
   const current = picking ? song.chords.find((c) => c.line === picking.line && c.index === picking.index) : undefined;
 
@@ -155,6 +158,34 @@ export default function EditPage() {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div>
+            <span className="mb-1 block text-sm text-gray-400">YouTube のリンク（任意）</span>
+            <div className="flex gap-2">
+              <input
+                value={youtubeText}
+                type="url"
+                inputMode="url"
+                autoCapitalize="off"
+                autoCorrect="off"
+                onChange={(e) => update({ youtubeUrl: e.target.value })}
+                placeholder="https://youtu.be/..."
+                className={`h-12 min-w-0 flex-1 rounded-lg bg-gray-800 px-3 text-base outline-none focus:ring-2 ${youtubeValid ? "ring-amber-500" : "ring-2 ring-red-500"}`}
+              />
+              {youtubeText.trim() && youtubeValid && (
+                <button
+                  type="button"
+                  onClick={() => openYouTube(youtubeText)}
+                  className="h-12 shrink-0 rounded-lg bg-red-600 px-3 text-sm font-bold text-white active:bg-red-500"
+                >
+                  確認
+                </button>
+              )}
+            </div>
+            {!youtubeValid && (
+              <span className="mt-1 block text-xs text-red-400">YouTube のリンクを貼り付けてください（YouTube アプリの「共有」→「コピー」）</span>
+            )}
           </div>
 
           <label className="block">

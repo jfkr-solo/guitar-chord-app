@@ -91,3 +91,62 @@ export function pruneChords(song: Song): Song {
     }),
   };
 }
+
+const EXPORT_FORMAT = "guitar-chord-app/songs";
+
+/** 全曲を共有用の JSON 文字列にする */
+export function exportSongs(): string {
+  return JSON.stringify({ format: EXPORT_FORMAT, version: 1, exportedAt: Date.now(), songs: listSongs() }, null, 2);
+}
+
+function isSong(v: unknown): v is Song {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  return (
+    typeof s.id === "string" &&
+    typeof s.title === "string" &&
+    typeof s.lyrics === "string" &&
+    Array.isArray(s.chords) &&
+    typeof s.updatedAt === "number"
+  );
+}
+
+/**
+ * 書き出したファイルの中身を取り込む。
+ * 同じ曲（同じ id）がすでにあるときは、更新日時が新しいほうを残す。
+ * 読めないファイルなら null を返す。
+ */
+export function importSongs(text: string): { added: number; updated: number; skipped: number } | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const list = Array.isArray(data) ? data : (data as { songs?: unknown })?.songs;
+  if (!Array.isArray(list)) return null;
+  const incoming = list.filter(isSong).map((s) => ({
+    ...s,
+    duration: typeof s.duration === "number" ? s.duration : 0,
+    capo: typeof s.capo === "number" ? s.capo : 0,
+  }));
+  if (incoming.length === 0 && list.length > 0) return null;
+
+  const songs = readAll();
+  const result = { added: 0, updated: 0, skipped: 0 };
+  for (const song of incoming) {
+    const i = songs.findIndex((s) => s.id === song.id);
+    if (i < 0) {
+      songs.push(song);
+      result.added++;
+    } else if (song.updatedAt > songs[i].updatedAt) {
+      // 並び順はこの端末のものを残す
+      songs[i] = { ...song, order: songs[i].order };
+      result.updated++;
+    } else {
+      result.skipped++;
+    }
+  }
+  writeAll(songs);
+  return result;
+}

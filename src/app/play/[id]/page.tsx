@@ -8,6 +8,7 @@ import LyricsSheet from "@/components/LyricsSheet";
 import { formatDuration, getSong } from "@/lib/storage";
 import type { PlacedChord, Song } from "@/lib/types";
 import { useAutoScroll } from "@/lib/useAutoScroll";
+import { openYouTube } from "@/lib/youtube";
 
 const FONT_KEY = "guitar-chord-app:play-font-size";
 const FONT_MIN = 18;
@@ -69,6 +70,19 @@ export default function PlayPage() {
           <span className="shrink-0 rounded-md bg-amber-500 px-2.5 py-1 text-sm font-bold text-gray-900">
             Capo {song.capo}
           </span>
+          {song.youtubeUrl?.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                pause();
+                openYouTube(song.youtubeUrl!);
+              }}
+              className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-red-600 px-2.5 text-sm font-bold text-white active:bg-red-500"
+              aria-label="YouTubeで開く"
+            >
+              ▶ YouTube
+            </button>
+          )}
           <Link
             href={`/edit/${song.id}`}
             onClick={pause}
